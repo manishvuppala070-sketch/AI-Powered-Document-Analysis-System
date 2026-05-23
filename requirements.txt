@@ -1,0 +1,14 @@
+streamlit
+langchain
+langchain-community
+langchain-openai
+faiss-cpu
+chromadb
+pymupdf
+pdfplumber
+sentence-transformers
+nltk
+spacy
+transformers
+torch
+
