@@ -11,17 +11,21 @@ def load_model():
         _tokenizer = AutoTokenizer.from_pretrained("deepset/minilm-uncased-squad2")
         _model = AutoModelForQuestionAnswering.from_pretrained("deepset/minilm-uncased-squad2")
 
+def clean_answer(text):
+    text = re.sub(r'\[CLS\]|\[SEP\]|\[PAD\]|\[UNK\]', '', text)
+    text = text.replace(' ##', '').strip()
+    return text
+
 def extract_section(text, keyword):
     pattern = re.compile(re.escape(keyword), re.IGNORECASE)
     match = pattern.search(text)
     if match:
         start = match.start()
-        # Find the next section heading (all caps word) after keyword
-        next_section = re.search(r'\n[A-Z]{3,}[\s\n]', text[start+len(keyword):])
+        next_section = re.search(r'[A-Z]{4,}', text[start + len(keyword) + 10:])
         if next_section:
-            end = start + len(keyword) + next_section.start()
+            end = start + len(keyword) + 10 + next_section.start()
         else:
-            end = start + 800
+            end = start + 600
         return text[start:end].strip()
     return None
 
@@ -47,26 +51,36 @@ def get_rag_response(vectorstore, question):
     best_chunk = find_best_chunk(filtered_docs, question)
     context = best_chunk.page_content[:3000]
 
-    inputs = _tokenizer(question, context, return_tensors="pt", truncation=True, max_length=512)
+    inputs = _tokenizer(
+        question, context,
+        return_tensors="pt",
+        truncation=True,
+        max_length=512,
+        return_offsets_mapping=False
+    )
     with torch.no_grad():
         outputs = _model(**inputs)
 
-    start = torch.argmax(outputs.start_logits)
-    end = torch.argmax(outputs.end_logits) + 1
-    answer = _tokenizer.convert_tokens_to_string(
-        _tokenizer.convert_ids_to_tokens(inputs["input_ids"][0][start:end])
-    )
+    # Use offsets to get clean answer span from original context
+    answer_start = torch.argmax(outputs.start_logits).item()
+    answer_end = torch.argmax(outputs.end_logits).item() + 1
 
-    bad_answers = ["", "[cls]", "[sep]", "[pad]"]
-    if not answer.strip() or answer.strip().lower() in bad_answers or len(answer.strip()) < 3:
-        # Try to extract specific section from question keywords
-        question_keywords = [w for w in question.upper().split() if len(w) > 3]
+    # Decode cleanly
+    input_ids = inputs["input_ids"][0]
+    answer_ids = input_ids[answer_start:answer_end]
+    answer = _tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
+    answer = clean_answer(answer)
+
+    # Fallback: extract section by keyword
+    if not answer or len(answer) < 4:
+        meaningful_words = [w for w in question.upper().split()
+                           if len(w) > 3 and w not in ['WHAT', 'WHICH', 'DOES', 'HAVE', 'THIS', 'THAT', 'WITH', 'FROM', 'PROJECT']]
         section_text = None
-        for keyword in question_keywords:
+        for keyword in meaningful_words:
             section_text = extract_section(best_chunk.page_content, keyword)
             if section_text:
                 break
-        answer = section_text if section_text else best_chunk.page_content[:500].strip()
+        answer = section_text if section_text else best_chunk.page_content[:400].strip()
 
     sources = []
     seen_pages = set()
