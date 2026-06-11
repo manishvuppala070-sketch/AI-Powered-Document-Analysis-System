@@ -1,5 +1,6 @@
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering
 import torch
+import re
 
 _tokenizer = None
 _model = None
@@ -9,6 +10,20 @@ def load_model():
     if _tokenizer is None:
         _tokenizer = AutoTokenizer.from_pretrained("deepset/minilm-uncased-squad2")
         _model = AutoModelForQuestionAnswering.from_pretrained("deepset/minilm-uncased-squad2")
+
+def extract_section(text, keyword):
+    pattern = re.compile(re.escape(keyword), re.IGNORECASE)
+    match = pattern.search(text)
+    if match:
+        start = match.start()
+        # Find the next section heading (all caps word) after keyword
+        next_section = re.search(r'\n[A-Z]{3,}[\s\n]', text[start+len(keyword):])
+        if next_section:
+            end = start + len(keyword) + next_section.start()
+        else:
+            end = start + 800
+        return text[start:end].strip()
+    return None
 
 def find_best_chunk(docs, question):
     question_words = set(question.lower().split())
@@ -29,7 +44,6 @@ def get_rag_response(vectorstore, question):
     if not filtered_docs:
         filtered_docs = [doc for doc, _ in docs_with_scores]
 
-    # Pick best chunk by keyword overlap for QA context
     best_chunk = find_best_chunk(filtered_docs, question)
     context = best_chunk.page_content[:3000]
 
@@ -45,7 +59,14 @@ def get_rag_response(vectorstore, question):
 
     bad_answers = ["", "[cls]", "[sep]", "[pad]"]
     if not answer.strip() or answer.strip().lower() in bad_answers or len(answer.strip()) < 3:
-        answer = best_chunk.page_content.strip()
+        # Try to extract specific section from question keywords
+        question_keywords = [w for w in question.upper().split() if len(w) > 3]
+        section_text = None
+        for keyword in question_keywords:
+            section_text = extract_section(best_chunk.page_content, keyword)
+            if section_text:
+                break
+        answer = section_text if section_text else best_chunk.page_content[:500].strip()
 
     sources = []
     seen_pages = set()
