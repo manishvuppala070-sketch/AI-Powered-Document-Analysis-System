@@ -8,17 +8,21 @@ def get_rag_response(vectorstore, question):
         filtered_docs = [doc for doc, _ in docs_with_scores]
     context = "\n\n".join(doc.page_content for doc in filtered_docs)
     prompt = (
-        "You are an intelligent document assistant.\n"
-        "Rules:\n"
-        "1. Use ONLY the provided context\n"
-        "2. If exact answer is not present, combine relevant parts\n"
-        "3. Do NOT hallucinate\n"
-        "4. If still unclear, say not available\n\n"
+        "You are an intelligent document assistant. "
+        "Answer using ONLY the context below. "
+        "If unclear, say not available.\n\n"
         "Context:\n" + context +
-        "\n\nQuestion:\n" + question +
-        "\n\nAnswer:"
+        "\n\nQuestion: " + question +
+        "\nAnswer:"
     )
-    pipe = pipeline("text2text-generation", model="google/flan-t5-base", max_new_tokens=512, device=-1)
+    pipe = pipeline(
+        "text-generation",
+        model="gpt2",
+        max_new_tokens=200,
+        device=-1,
+        truncation=True,
+        pad_token_id=50256
+    )
     llm = HuggingFacePipeline(pipeline=pipe)
     answer = llm.invoke(prompt)
     sources = []
