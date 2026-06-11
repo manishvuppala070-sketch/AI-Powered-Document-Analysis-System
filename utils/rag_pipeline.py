@@ -16,17 +16,24 @@ def get_rag_response(vectorstore, question):
     filtered_docs = [doc for doc, score in docs_with_scores if score < 1.5]
     if not filtered_docs:
         filtered_docs = [doc for doc, _ in docs_with_scores]
+
     context = " ".join(doc.page_content for doc in filtered_docs)[:3000]
+
     inputs = _tokenizer(question, context, return_tensors="pt", truncation=True, max_length=512)
     with torch.no_grad():
         outputs = _model(**inputs)
+
     start = torch.argmax(outputs.start_logits)
     end = torch.argmax(outputs.end_logits) + 1
     answer = _tokenizer.convert_tokens_to_string(
         _tokenizer.convert_ids_to_tokens(inputs["input_ids"][0][start:end])
     )
-    if not answer.strip() or answer.strip() == "[CLS]":
-        answer = "Not available in the document."
+
+    # If model returns empty or junk, fall back to most relevant chunk
+    bad_answers = ["", "[cls]", "[sep]", "[pad]"]
+    if not answer.strip() or answer.strip().lower() in bad_answers or len(answer.strip()) < 3:
+        answer = filtered_docs[0].page_content.strip()
+
     sources = []
     seen_pages = set()
     for doc in filtered_docs:
