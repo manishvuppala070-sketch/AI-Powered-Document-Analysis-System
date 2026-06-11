@@ -1,16 +1,13 @@
 import streamlit as st
 import tempfile
 import uuid
-
 from utils.pdf_loader import extract_text_from_pdf
 from utils.text_splitter import split_text
 from utils.embeddings import create_vector_store
 from utils.rag_pipeline import get_rag_response
 from utils.pdf_highlighter import highlight_pdf
 
-
 st.set_page_config(page_title="Intelligent Document Analysis", layout="wide")
-
 st.title("📄 Intelligent Document Analysis System")
 st.subheader("Using LLM + RAG Architecture")
 
@@ -40,43 +37,34 @@ if uploaded_file:
     st.success("Vector database created successfully ✅")
 
     st.subheader("Ask Questions from Document")
-
     question = st.text_input("Ask a question from the document")
 
     if question:
         with st.spinner("Thinking..."):
             answer, sources = get_rag_response(vectorstore, question)
 
-        #  Show Answer
+        # Show Answer
         st.subheader("Answer")
         st.success(answer)
 
-        #  Show Source Info
+        # Show Source Info
         if sources:
             st.subheader("📄 Source Information")
-
             for src in sources:
                 st.markdown(f"**Page {src['page']}**")
                 st.write(src["text"])
 
-        #  FINAL WORKING HIGHLIGHTING (PAGE-BASED)
+        # Highlighting
         if sources:
             pages_to_highlight = []
-
-            # Take best source page
             best_page = sources[0]["page"]
-
             if best_page != "N/A":
                 pages_to_highlight.append(int(best_page))
 
-            # Create output PDF
             output_pdf = f"highlighted_{uuid.uuid4().hex}.pdf"
-
             try:
-                highlight_pdf(pdf_path, output_pdf, pages_to_highlight)
-
+                highlight_pdf(pdf_path, output_pdf, answer, pages_to_highlight)
                 st.success("🟨 Highlighted PDF generated successfully")
-
                 with open(output_pdf, "rb") as f:
                     st.download_button(
                         label="📥 Download Highlighted PDF",
@@ -84,6 +72,5 @@ if uploaded_file:
                         file_name="highlighted.pdf",
                         mime="application/pdf"
                     )
-
             except Exception as e:
                 st.warning("⚠️ Highlighting failed, but answer is correct.")
