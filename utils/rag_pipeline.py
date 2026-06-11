@@ -61,17 +61,14 @@ def get_rag_response(vectorstore, question):
     with torch.no_grad():
         outputs = _model(**inputs)
 
-    # Use offsets to get clean answer span from original context
     answer_start = torch.argmax(outputs.start_logits).item()
     answer_end = torch.argmax(outputs.end_logits).item() + 1
 
-    # Decode cleanly
     input_ids = inputs["input_ids"][0]
     answer_ids = input_ids[answer_start:answer_end]
     answer = _tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
     answer = clean_answer(answer)
 
-    # Fallback: extract section by keyword
     if not answer or len(answer) < 4:
         meaningful_words = [w for w in question.upper().split()
                            if len(w) > 3 and w not in ['WHAT', 'WHICH', 'DOES', 'HAVE', 'THIS', 'THAT', 'WITH', 'FROM', 'PROJECT']]
@@ -80,7 +77,7 @@ def get_rag_response(vectorstore, question):
             section_text = extract_section(best_chunk.page_content, keyword)
             if section_text:
                 break
-        answer = section_text if section_text else best_chunk.page_content[:400].strip()
+        answer = section_text if section_text else "This information is not available in the uploaded document."
 
     sources = []
     seen_pages = set()
