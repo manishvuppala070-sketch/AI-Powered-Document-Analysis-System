@@ -1,4 +1,3 @@
-from langchain_community.llms import HuggingFacePipeline
 from transformers import pipeline
 
 def get_rag_response(vectorstore, question):
@@ -6,25 +5,15 @@ def get_rag_response(vectorstore, question):
     filtered_docs = [doc for doc, score in docs_with_scores if score < 1.5]
     if not filtered_docs:
         filtered_docs = [doc for doc, _ in docs_with_scores]
-    context = "\n\n".join(doc.page_content for doc in filtered_docs)
-    prompt = (
-        "You are an intelligent document assistant. "
-        "Answer using ONLY the context below. "
-        "If unclear, say not available.\n\n"
-        "Context:\n" + context +
-        "\n\nQuestion: " + question +
-        "\nAnswer:"
+    context = " ".join(doc.page_content for doc in filtered_docs)
+    # Use a real QA model
+    qa_pipeline = pipeline(
+        "question-answering",
+        model="deepset/minilm-uncased-squad2",
+        device=-1
     )
-    pipe = pipeline(
-        "text-generation",
-        model="gpt2",
-        max_new_tokens=200,
-        device=-1,
-        truncation=True,
-        pad_token_id=50256
-    )
-    llm = HuggingFacePipeline(pipeline=pipe)
-    answer = llm.invoke(prompt)
+    result = qa_pipeline(question=question, context=context[:3000])
+    answer = result["answer"]
     sources = []
     seen_pages = set()
     for doc in filtered_docs:
